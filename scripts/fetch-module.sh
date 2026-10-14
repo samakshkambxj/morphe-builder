@@ -64,3 +64,7 @@ done
 [ -n "$URL" ] || { echo "[fetch] no $APP module in recent $REPO releases"; exit 1; }
 curl -fL -o "$OUT/$APP-module.zip" "$URL"
 echo "[fetch] saved $OUT/$APP-module.zip"
+# Base version parsed from the asset name for callers stamping manifests.
+BASE_VERSION="$(basename "$URL" | grep -m1 -o 'v[0-9][0-9.]*' | head -n1 || true)"
+BASE_VERSION="${BASE_VERSION#v}"
+echo "BASE_VERSION=$BASE_VERSION"

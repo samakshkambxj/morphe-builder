@@ -6,6 +6,10 @@
 # This workflow owns the whole chain; see config.toml for pins.
 name: build
 
+# Release publishing needs contents:write (default token is read-only).
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 16 * * *" # daily: detect drift, build only unreleased pins
@@ -47,7 +51,7 @@ jobs:
 
   patch:
     needs: [detect]
-    if: needs.detect.outputs.build == 'true'
+    if: needs.detect.outputs.build == 'true' || inputs.channel == 'beta'
     strategy:
       fail-fast: true
       matrix:
@@ -110,8 +114,24 @@ jobs:
             echo "no keystore secret: patch-app.sh generates an ephemeral key (PR builds only)"
           fi
 
-      - name: Fetch stock base
+      - name: "Resolve floating revs (beta: latest dev patches)"
+        if: inputs.channel == 'beta'
+        run: |
+          REV=$(curl -fsSL "https://api.github.com/repos/MorpheApp/morphe-patches/releases?per_page=5" \
+            | python3 -c "import json,sys; rs=json.load(sys.stdin); print(next(r['tag_name'] for r in rs if not r.get('draft')))")
+          echo "PATCHES_REV=$REV" >> "$GITHUB_ENV"
+          echo "floating patches: $REV (CLI stays pinned for tooling stability)"
+
+      - name: "Fetch stock base (stable: pinned APKMirror)"
+        if: inputs.channel != 'beta'
         run: python3 scripts/fetch-stock.py --release "$STOCK_URL" --match "$STOCK_MATCH" --out "stock-${{ matrix.app }}.apk"
+
+      - name: "Fetch stock base (beta: newest module)"
+        if: inputs.channel == 'beta'
+        run: |
+          bash scripts/fetch-module.sh --app "${{ matrix.app }}" --out upstream/ 2>&1 | tee fetch.log
+          python3 scripts/extract-stock.py --module "upstream/${{ matrix.app }}-module.zip" --out "stock-${{ matrix.app }}.apk"
+          echo "APP_BASE=$(grep ^BASE_VERSION= fetch.log | cut -d= -f2)" >> "$GITHUB_ENV"
 
       # From-source patching: stock base + pinned CLI/patches, root recipe.
       - name: Patch + sign
@@ -163,6 +183,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Files only: gh cannot upload directories, and lib sets are
+          # re-extracted from the modules downstream anyway.
           gh release create "$TAG" --title "$TAG (${{ inputs.channel || 'stable' }})" \
             --notes "Patch revs see config.toml pins. versions.json is authoritative." \
-            modules/*-module.zip vendor-drop/*
+            modules/*-module.zip vendor-drop/*.apk vendor-drop/*.apk.part* \
+            vendor-drop/versions.json vendor-drop/SHA256SUMS

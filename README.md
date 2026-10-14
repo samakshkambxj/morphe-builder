@@ -47,7 +47,11 @@ testing, wrong for releases — dirty flashes would signature-clash).
 ## Channels
 
 - `stable` — pinned base APK + patch revs, reproducible, for ROM CI.
-- `beta` — floating latest, for testing. Promote to stable by pinning.
+  Scheduled runs and pushes build it; advancement is a pin-bump PR.
+- `beta` — floating latest: newest dev patches + newest-with-module stock
+  per app, versions stamped from what actually built. Dispatch manually
+  with channel `beta` (bypasses the pin gate). CLI stays pinned even on
+  beta — tooling stability over novelty.
 
 ## Automation
 
