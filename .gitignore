@@ -1,0 +1,7 @@
+# Copyright (C) 2026 Samaksh Kamboj
+# SPDX-License-Identifier: Apache-2.0
+# Build outputs are large and reproducible — never commit them.
+out/
+*.apk
+*.zip
+!*.apk.part*

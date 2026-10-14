@@ -1,0 +1,55 @@
+# Copyright (C) 2026 Samaksh Kamboj
+# SPDX-License-Identifier: Apache-2.0
+# Builder input: patch sources, apps, base pins and channels.
+# Feeds the template patch job; everything downstream (QA, vendor-drop,
+# manifest, releases) keys off this file.
+
+[meta]
+channel = "stable" # stable | beta. beta floats latest, stable pins below.
+builder = "morphe-builder"
+
+# Patch sources per variant. Revs are pinned on stable; beta tracks heads.
+# Only morphe streams are published today; revanced/anddea entries are the
+# variant matrix the day those streams exist (see README).
+[sources.morphe]
+patches = "MorpheApp/morphe-patches"
+cli = "MorpheApp/morphe-cli"
+patches_rev = "v1.22.0"   # stable pin; beta ignores rev pins
+cli_rev = "v1.6.3"
+
+[sources.revanced]
+patches = "ReVanced/revanced-patches"
+cli = "ReVanced/revanced-cli"
+patches_rev = ""          # unwired: no published module stream yet
+cli_rev = ""
+
+[sources.anddea]
+patches = "anddea/revanced-patches"
+cli = "MorpheApp/morphe-cli"
+patches_rev = ""          # unwired: no published module stream yet
+cli_rev = ""
+
+# Apps to build. base pins the stock APK version the patches target;
+# mismatch between base and patches is the #1 source of bad revs.
+[apps.youtube]
+package = "com.google.android.youtube"
+source = "morphe"
+base = "20.45.36"
+arches = ["arm64-v8a", "arm-v7a", "all"]
+
+[apps.music]
+package = "com.google.android.apps.youtube.music"
+source = "morphe"
+base = "8.44.54"
+arches = ["arm64-v8a", "arm-v7a"]
+
+[apps.reddit]
+package = "com.reddit.frontpage"
+source = "morphe"
+base = "2026.24.0"
+arches = ["all"]
+
+[release]
+keep_last = 10            # prune older releases, storage is finite
+split_parts = true        # also publish vendor-tree .part chunks
+split_size = "20m"
