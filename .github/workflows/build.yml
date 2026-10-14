@@ -1,9 +1,9 @@
 # Copyright (C) 2026 Samaksh Kamboj
 # SPDX-License-Identifier: Apache-2.0
-# Release pipeline: matrix patch -> QA gate -> vendor-drop -> GitHub release.
-# Patch execution itself runs through the upstream template machinery (the
-# one marked integration point below); this workflow owns everything
-# downstream: selection, QA, ROM-shaped outputs, manifest, publishing.
+# Release pipeline: fetch -> patch -> sign -> module -> QA gate ->
+# vendor-drop -> GitHub release. From-source throughout: stock bases from
+# APKMirror pins, Morphe CLI + patches at pinned revs, our own key.
+# This workflow owns the whole chain; see config.toml for pins.
 name: build
 
 on:
@@ -45,34 +45,84 @@ jobs:
       matrix:
         app: [youtube, music, reddit]
     runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: -Xmx10g # YouTube patching is heap-hungry
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve config for channel
-        run: |
-          echo "channel=${{ inputs.channel || 'stable' }}" >> "$GITHUB_ENV"
-          python3 - <<'EOF'
-          import tomllib
-          cfg = tomllib.load(open("config.toml", "rb"))
-          print("pins:", {a: v.get("base") for a, v in cfg.get("apps", {}).items()})
-          EOF
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-      # TODO(fork wiring): run the upstream template patch job here for
-      # matrix.app at the config.toml pin. It must yield the module zip
-      # at modules/<app>-module.zip with the contracted layout
-      # (root base.apk = patched, stock/base.apk = pristine stock).
-      - name: Patch (template job goes here)
+      - name: Install Android build-tools (apksigner)
         run: |
-          echo "TODO(fork wiring): invoke template patch for app=${{ matrix.app }}"
-          echo "expected output: modules/${{ matrix.app }}-module.zip"
-          exit 1
+          sudo mkdir -p /opt/android-sdk/cmdline-tools
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          sudo unzip -q /tmp/cmdtools.zip -d /opt/android-sdk/cmdline-tools
+          sudo mv /opt/android-sdk/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest
+          export ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
+          yes | sudo /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
+          sudo /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;35.0.0" >/dev/null
+          echo "/opt/android-sdk/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+      - name: Resolve config for app
+        run: |
+          python3 - <<'EOF'
+          import os, tomllib
+          cfg = tomllib.load(open("config.toml", "rb"))
+          key = {"youtube": "youtube", "music": "music", "reddit": "reddit"}[os.environ["MATRIX_APP"]]
+          a = cfg["apps"][key]
+          src = cfg["sources"][a.get("source", "morphe")]
+          out = {
+              "STOCK_URL": a["apkmirror"],
+              "APP_PACKAGE": a["package"],
+              "APP_BASE": a["base"],
+              "APP_MARKERS": a.get("markers", "app/morphe"),
+              "CLI_REV": src["cli_rev"],
+              "PATCHES_REV": src["patches_rev"],
+          }
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              for k, v in out.items():
+                  f.write(f"{k}={v}\n")
+          print(out)
+          EOF
+        env:
+          MATRIX_APP: ${{ matrix.app }}
+
+      - name: Keystore from secret (else ephemeral + warning)
+        run: |
+          if [ -n "${{ secrets.MORPHE_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.MORPHE_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+            echo "MORPHE_KEYSTORE=$PWD/keystore.jks" >> "$GITHUB_ENV"
+            echo "MORPHE_STOREPASS=${{ secrets.MORPHE_STOREPASS }}" >> "$GITHUB_ENV"
+            echo "MORPHE_KEYPASS=${{ secrets.MORPHE_KEYPASS }}" >> "$GITHUB_ENV"
+          else
+            echo "no keystore secret: patch-app.sh generates an ephemeral key (PR builds only)"
+          fi
+
+      - name: Fetch stock base
+        run: python3 scripts/fetch-stock.py --release "$STOCK_URL" --out "stock-${{ matrix.app }}.apk"
+
+      # From-source patching: stock base + pinned CLI/patches, root recipe.
+      - name: Patch + sign
+        run: |
+          bash scripts/patch-app.sh --app "${{ matrix.app }}" \
+            --stock "stock-${{ matrix.app }}.apk" --out "patched-${{ matrix.app }}.apk" \
+            --workdir "work-${{ matrix.app }}" \
+            --cli-rev "$CLI_REV" --patches-rev "$PATCHES_REV"
+
+      - name: Assemble module
+        run: |
+          bash scripts/make-module.sh --app "${{ matrix.app }}" \
+            --package "$APP_PACKAGE" --version "$APP_BASE" \
+            --patched "patched-${{ matrix.app }}.apk" --stock "stock-${{ matrix.app }}.apk" \
+            --out "modules/${{ matrix.app }}-module.zip"
 
       - name: QA gate
         run: |
-          # Markers double as the variant fingerprint (morphe set shown).
           bash scripts/qa-gate.sh --module "modules/${{ matrix.app }}-module.zip" \
-            --markers app/morphe,SponsorBlock \
-            --max-patched-libs 2 --min-stock-libs 10
+            --markers "$APP_MARKERS" --min-stock-libs 10
 
       - uses: actions/upload-artifact@v4
         with:

@@ -30,10 +30,17 @@ scripts/make-vendor-drop.sh  # module zips -> ROM-ready vendor-drop/ + manifest
 
 ## Patch execution
 
-Patching itself runs through the upstream template machinery (its build job
-is the one integration point, marked `TODO(fork wiring)` in the workflow):
-this repo owns everything downstream — selection, QA, ROM-shaped outputs,
-manifest, publishing. Configure sources and pins in `config.toml`.
+From-source throughout: stock bases are fetched from the APKMirror pins in
+`config.toml` (`scripts/fetch-stock.py`, arch-aware variant pick), patched
+with the pinned Morphe CLI + patches using the root recipe (`--mount`,
+GmsCore/package-name patches excluded, arm64 strip), signed with our key,
+and assembled into Magisk-layout modules — then QA-gated and published.
+No curated upstream binaries anywhere in the chain.
+
+Signing key: set `MORPHE_KEYSTORE_BASE64` (+ `MORPHE_STOREPASS`,
+`MORPHE_KEYPASS`) repo secrets and CI uses the stable key; without them
+the run generates an ephemeral key and says so loudly (fine for PR
+testing, wrong for releases — dirty flashes would signature-clash).
 
 ## Channels
 
