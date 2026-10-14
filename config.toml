@@ -14,8 +14,8 @@ builder = "morphe-builder"
 [sources.morphe]
 patches = "MorpheApp/morphe-patches"
 cli = "MorpheApp/morphe-cli"
-patches_rev = "v1.22.0"   # stable pin; beta ignores rev pins
-cli_rev = "v1.6.3"
+patches_rev = "v1.47.0"   # stable pin; beta ignores rev pins
+cli_rev = "v1.18.1"
 
 [sources.revanced]
 patches = "ReVanced/revanced-patches"
@@ -34,19 +34,25 @@ cli_rev = ""
 [apps.youtube]
 package = "com.google.android.youtube"
 source = "morphe"
-base = "20.45.36"
+base = "21.20.405"
+apkmirror = "https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-20-405-release"
+markers = "app/morphe,SponsorBlock"
 arches = ["arm64-v8a", "arm-v7a", "all"]
 
 [apps.music]
 package = "com.google.android.apps.youtube.music"
 source = "morphe"
-base = "8.44.54"
+base = "9.20.53"
+apkmirror = "https://www.apkmirror.com/apk/google-inc/youtube-music/youtube-music-9-20-53-release"
+markers = "app/morphe,SponsorBlock"
 arches = ["arm64-v8a", "arm-v7a"]
 
 [apps.reddit]
 package = "com.reddit.frontpage"
 source = "morphe"
 base = "2026.24.0"
+apkmirror = "https://www.apkmirror.com/apk/redditinc/reddit/reddit-2026-24-0-release"
+markers = "app/morphe"
 arches = ["all"]
 
 [release]
