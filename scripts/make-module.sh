@@ -77,11 +77,9 @@ cat > "$STAGE/uninstall.sh" <<'EOF'
 EOF
 
 rm -f "$OUT"
-OUT_ABS="$(cd "$(dirname "$OUT")" 2>/dev/null && pwd)/$(basename "$OUT")"
-if [ ! -d "$(dirname "$OUT_ABS")" ]; then
-    echo "[module] output dir missing: $(dirname "$OUT")"
-    exit 1
-fi
+OUTDIR="$(dirname "$OUT")"
+mkdir -p "$OUTDIR" || { echo "[module] cannot create output dir: $OUTDIR"; exit 1; }
+OUT_ABS="$(cd "$OUTDIR" && pwd)/$(basename "$OUT")"
 (cd "$STAGE" && zip -9 -qr "$OUT_ABS" base.apk stock module.prop customize.sh uninstall.sh)
 echo "[module] wrote $OUT_ABS ($(du -h "$OUT_ABS" | cut -f1))"
 unzip -l "$OUT_ABS" | tail -n +4 | head -n -2
