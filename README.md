@@ -49,10 +49,13 @@ testing, wrong for releases — dirty flashes would signature-clash).
 
 ## Automation
 
-The daily schedule runs `scripts/check-updates.py` first: it diffs the
-`config.toml` pins against live patch tags and base versions and only
-builds on drift (manual dispatch can force). No blind rebuilds burning
-runner minutes when nothing moved.
+Base APKs are **fixed** via `config.toml` pins: every build is hermetic
+and reproducible, and advancement is a pin-bump PR, never a floating
+re-download. The daily schedule runs `scripts/check-updates.py`, which
+compares pins against **our last release manifest** (build only what is
+unreleased) and separately reports **live drift** (promotion signal).
+Pushes touching config/scripts/workflows build immediately, so merging
+a pin bump releases it. Manual dispatch can force.
 
 ## License
 

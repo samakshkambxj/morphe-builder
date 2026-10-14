@@ -8,7 +8,9 @@ name: build
 
 on:
   schedule:
-    - cron: "0 16 * * *" # daily, mirrors upstream cadence
+    - cron: "0 16 * * *" # daily: detect drift, build only unreleased pins
+  push:
+    paths: [config.toml, scripts/**, .github/workflows/build.yml]
   workflow_dispatch:
     inputs:
       channel:
@@ -23,11 +25,13 @@ on:
 
 jobs:
   detect:
-    # Change-driven builds: compare config pins to live upstreams; the
-    # matrix below only runs on drift (or forced manual dispatch).
+    # Hermetic stable: the matrix builds only pins absent from our last
+    # release manifest. Live drift is reported (promotion signal), never
+    # rebuilt blindly. Pin bumps via push build immediately.
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.check.outputs.build }}
+      updates: ${{ steps.check.outputs.updates }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +40,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_BUILD: ${{ inputs.force_build }}
         run: python3 scripts/check-updates.py
+
+      - name: Summary
+        run: |
+          echo "build=${{ steps.check.outputs.build }} updates=${{ steps.check.outputs.updates }}" >> "$GITHUB_STEP_SUMMARY"
 
   patch:
     needs: [detect]

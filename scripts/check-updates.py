@@ -21,6 +21,9 @@ import urllib.request
 
 API = "https://api.github.com"
 UPSTREAM_BUILDER = "j-hc/revanced-magisk-module"
+# Our own releases: the build gate compares config pins against the last
+# published manifest (hermetic stable), not against live drift.
+SELF_REPO = os.environ.get("UPDATES_SELF_REPO", "samakshkambxj/morphe-builder")
 MODULE_MATCH = {
     "youtube": "youtube-morphe-module-",
     "music": "music-morphe-module-",
@@ -47,6 +50,43 @@ def ver_tuple(v):
     return tuple(int(x) for x in re.findall(r"\d+", v or ""))
 
 
+def compare_pins(cfg, manifest):
+    """Diff config pins against a published manifest. Returns reason list."""
+    reasons = []
+    man_apps = (manifest or {}).get("apps", {})
+    man_rev = (manifest or {}).get("patch_rev", "")
+    cfg_rev = (((cfg.get("sources") or {}).get("morphe") or {}).get("patches_rev") or "").strip()
+    if cfg_rev and man_rev and cfg_rev != man_rev:
+        reasons.append(f"patches {man_rev} -> {cfg_rev}")
+    elif cfg_rev and not man_rev:
+        reasons.append(f"patches {cfg_rev} not yet released")
+    for app, want in (cfg.get("apps") or {}).items():
+        pin = (want.get("base") or "").strip()
+        built = ((man_apps.get(app) or {}).get("base_version") or "").strip()
+        if pin and built and ver_tuple(pin) != ver_tuple(built):
+            reasons.append(f"{app} pin {built} -> {pin}")
+        elif pin and not built:
+            reasons.append(f"{app} {pin} not yet released")
+    return reasons
+
+
+def fetch_manifest():
+    """Our latest release's versions.json, or None when never released."""
+    try:
+        rel = api(f"/repos/{SELF_REPO}/releases/latest")
+    except Exception:  # noqa: BLE001 - 404 on first ever run
+        return None
+    for a in rel.get("assets", []):
+        if a.get("name", "") == "versions.json":
+            req = urllib.request.Request(
+                a["browser_download_url"],
+                headers={"User-Agent": "morphe-builder-check"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.load(r)
+    return None
+
+
 def asset_version(name):
     m = re.search(r"v(\d[\d.]*)", name)
     return m.group(1).rstrip(".") if m else ""
@@ -54,12 +94,10 @@ def asset_version(name):
 
 def main():
     cfg = tomllib.load(open("config.toml", "rb"))
-    reasons = []
 
-    if os.environ.get("FORCE_BUILD") == "1":
-        reasons.append("forced via FORCE_BUILD=1")
-
-    # 1. Patch source revs.
+    # 1. What changed upstream (informational: drives promotion PRs, and a
+    # build only when pins were already bumped to match it).
+    updates: list[str] = []
     for variant, src in (cfg.get("sources") or {}).items():
         pin = (src.get("patches_rev") or "").strip()
         repo = (src.get("patches") or "").strip()
@@ -68,17 +106,17 @@ def main():
         try:
             latest = api(f"/repos/{repo}/releases/latest").get("tag_name", "")
         except Exception as e:  # noqa: BLE001 - network flakes fail open
-            reasons.append(f"{variant} patch check failed ({e}); building to be safe")
+            updates.append(f"{variant} patch check failed ({e})")
             continue
         if latest and latest != pin:
-            reasons.append(f"{variant} patches {pin} -> {latest}")
+            updates.append(f"{variant} patches {pin} -> {latest}")
 
     # 2. Stock base versions, newest-first per app.
     try:
         releases = api(f"/repos/{UPSTREAM_BUILDER}/releases?per_page=10")
     except Exception as e:  # noqa: BLE001
         releases = []
-        reasons.append(f"base check failed ({e}); building to be safe")
+        updates.append(f"base check failed ({e})")
     found: dict[str, str] = {}
     for rel in releases:
         tag = rel.get("tag_name", "")
@@ -110,14 +148,35 @@ def main():
         pin = (want.get("base") or "").strip()
         live = found.get(app, "")
         if live and pin and ver_tuple(live) != ver_tuple(pin):
-            reasons.append(f"{app} base {pin} -> {live}")
+            updates.append(f"{app} base {pin} -> {live}")
 
-    build = bool(reasons)
+    # 3. Build gate: config pins vs OUR last published manifest. Hermetic
+    # stable — live drift alone never rebuilds identical pins.
+    build_reasons: list[str] = list(updates)
+    try:
+        manifest = fetch_manifest()
+    except Exception as e:  # noqa: BLE001
+        manifest = None
+        build_reasons.append(f"own-release check failed ({e})")
+    if manifest is None:
+        build_reasons.append("no prior release; building")
+        build = True
+    else:
+        pin_diff = compare_pins(cfg, manifest)
+        build_reasons.extend(f"pin advanced, {r}" if "not yet released" not in r else r for r in pin_diff)
+        build = bool(pin_diff)
+    if os.environ.get("FORCE_BUILD") == "1" and not build:
+        build = True
+        build_reasons.append("forced via FORCE_BUILD=1")
+
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a") as f:
             f.write(f"build={'true' if build else 'false'}\n")
-    print(json.dumps({"build": build, "reasons": reasons}, indent=2))
+            f.write(f"updates={'true' if updates else 'false'}\n")
+    print(json.dumps(
+        {"build": build, "build_reasons": build_reasons,
+         "updates_available": bool(updates), "updates": updates}, indent=2))
 
 
 if __name__ == "__main__":
