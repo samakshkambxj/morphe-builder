@@ -16,9 +16,30 @@ on:
         default: "stable"
         type: choice
         options: [stable, beta]
+      force_build:
+        description: "build even when no upstream change is detected"
+        default: false
+        type: boolean
 
 jobs:
+  detect:
+    # Change-driven builds: compare config pins to live upstreams; the
+    # matrix below only runs on drift (or forced manual dispatch).
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_BUILD: ${{ inputs.force_build }}
+        run: python3 scripts/check-updates.py
+
   patch:
+    needs: [detect]
+    if: needs.detect.outputs.build == 'true'
     strategy:
       fail-fast: true
       matrix:

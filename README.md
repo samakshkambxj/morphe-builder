@@ -40,6 +40,13 @@ manifest, publishing. Configure sources and pins in `config.toml`.
 - `stable` — pinned base APK + patch revs, reproducible, for ROM CI.
 - `beta` — floating latest, for testing. Promote to stable by pinning.
 
+## Automation
+
+The daily schedule runs `scripts/check-updates.py` first: it diffs the
+`config.toml` pins against live patch tags and base versions and only
+builds on drift (manual dispatch can force). No blind rebuilds burning
+runner minutes when nothing moved.
+
 ## License
 
 Apache-2.0, see LICENSE. Patch sources and base APKs belong to their
