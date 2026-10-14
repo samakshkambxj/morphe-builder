@@ -31,11 +31,13 @@ scripts/make-vendor-drop.sh  # module zips -> ROM-ready vendor-drop/ + manifest
 ## Patch execution
 
 From-source throughout: stock bases are fetched from the APKMirror pins in
-`config.toml` (`scripts/fetch-stock.py`, arch-aware variant pick), patched
-with the pinned Morphe CLI + patches using the root recipe (`--mount`,
-GmsCore/package-name patches excluded, arm64 strip), signed with our key,
-and assembled into Magisk-layout modules — then QA-gated and published.
-No curated upstream binaries anywhere in the chain.
+`config.toml` (`scripts/fetch-stock.py`: monolithic-first scoring, then
+structural validation — root manifest, dex, minimum arm64 lib set — walking
+candidates until one passes). Split-bundle repacks are rejected outright:
+their nested `base.apk` carries zero native libs and the patcher NPEs on
+manifest-less input. When no APKMirror variant validates (recent Reddit),
+the stock base is seeded from the upstream builder's module instead —
+same pristine Google bytes, loudly logged.
 
 Signing key: set `MORPHE_KEYSTORE_BASE64` (+ `MORPHE_STOREPASS`,
 `MORPHE_KEYPASS`) repo secrets and CI uses the stable key; without them

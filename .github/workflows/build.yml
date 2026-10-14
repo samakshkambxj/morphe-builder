@@ -84,6 +84,7 @@ jobs:
           src = cfg["sources"][a.get("source", "morphe")]
           out = {
               "STOCK_URL": a["apkmirror"],
+              "STOCK_MATCH": {"youtube": "youtube-morphe-module-", "music": "music-morphe-module-", "reddit": "reddit-morphe-module-"}[os.environ["MATRIX_APP"]],
               "APP_PACKAGE": a["package"],
               "APP_BASE": a["base"],
               "APP_MARKERS": a.get("markers", "app/morphe"),
@@ -110,7 +111,7 @@ jobs:
           fi
 
       - name: Fetch stock base
-        run: python3 scripts/fetch-stock.py --release "$STOCK_URL" --out "stock-${{ matrix.app }}.apk"
+        run: python3 scripts/fetch-stock.py --release "$STOCK_URL" --match "$STOCK_MATCH" --out "stock-${{ matrix.app }}.apk"
 
       # From-source patching: stock base + pinned CLI/patches, root recipe.
       - name: Patch + sign
