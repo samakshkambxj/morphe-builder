@@ -1,0 +1,88 @@
+# Copyright (C) 2026 Samaksh Kamboj
+# SPDX-License-Identifier: Apache-2.0
+# Release pipeline: matrix patch -> QA gate -> vendor-drop -> GitHub release.
+# Patch execution itself runs through the upstream template machinery (the
+# one marked integration point below); this workflow owns everything
+# downstream: selection, QA, ROM-shaped outputs, manifest, publishing.
+name: build
+
+on:
+  schedule:
+    - cron: "0 16 * * *" # daily, mirrors upstream cadence
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "stable (pinned) or beta (floating)"
+        default: "stable"
+        type: choice
+        options: [stable, beta]
+
+jobs:
+  patch:
+    strategy:
+      fail-fast: true
+      matrix:
+        app: [youtube, music, reddit]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve config for channel
+        run: |
+          echo "channel=${{ inputs.channel || 'stable' }}" >> "$GITHUB_ENV"
+          python3 - <<'EOF'
+          import tomllib
+          cfg = tomllib.load(open("config.toml", "rb"))
+          print("pins:", {a: v.get("base") for a, v in cfg.get("apps", {}).items()})
+          EOF
+
+      # TODO(fork wiring): run the upstream template patch job here for
+      # matrix.app at the config.toml pin. It must yield the module zip
+      # at modules/<app>-module.zip with the contracted layout
+      # (root base.apk = patched, stock/base.apk = pristine stock).
+      - name: Patch (template job goes here)
+        run: |
+          echo "TODO(fork wiring): invoke template patch for app=${{ matrix.app }}"
+          echo "expected output: modules/${{ matrix.app }}-module.zip"
+          exit 1
+
+      - name: QA gate
+        run: |
+          # Markers double as the variant fingerprint (morphe set shown).
+          bash scripts/qa-gate.sh --module "modules/${{ matrix.app }}-module.zip" \
+            --markers app/morphe,SponsorBlock \
+            --max-patched-libs 2 --min-stock-libs 10
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: module-${{ matrix.app }}
+          path: modules/${{ matrix.app }}-module.zip
+
+  release:
+    needs: [patch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: modules/
+          merge-multiple: true
+
+      - name: Assemble vendor-drop
+        run: |
+          TAG="$(date -u +%Y%m%d)"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          bash scripts/make-vendor-drop.sh --out vendor-drop --tag "$TAG" \
+            --app YouTube --module "modules/youtube-module.zip" \
+            --app Music   --module "modules/music-module.zip" \
+            --app Reddit  --module "modules/reddit-module.zip" \
+            --split
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" --title "$TAG (${{ inputs.channel || 'stable' }})" \
+            --notes "Patch revs see config.toml pins. versions.json is authoritative." \
+            modules/*-module.zip vendor-drop/*
