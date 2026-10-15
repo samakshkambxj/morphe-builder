@@ -16,7 +16,7 @@
 #                [--min-stock-libs N]
 # A module passes when the patched build is genuine AND a usable native lib
 # source exists anywhere: our own patch output carries its full lib set
-# (self-contained), while j-hc-style modules carry near-zero libs and rely
+# (self-contained), while libless-over-stock modules carry near-zero libs and rely
 # on the bundled stock base. Either shape passes; libless-patched AND
 # missing/thin-stock fails (that combination dies at startup with
 # UnsatisfiedLinkError — the exact outage this gate exists to prevent).
@@ -78,7 +78,7 @@ fi
 
 # 3. Native lib source must exist SOMEWHERE. Producers differ: our own patch
 # output is self-contained (full lib set inside the patched build) while
-# j-hc-style modules ship near-libless patched builds over a full stock
+# External libless-over-stock modules ship near-libless patched builds over a full stock
 # base. Either shape stages fine downstream; libless-patched plus
 # missing/thin-stock is a guaranteed runtime UnsatisfiedLinkError.
 PLIBS="$(python3 -c "

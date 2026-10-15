@@ -18,7 +18,7 @@ set -euo pipefail
 
 APP=""
 OUT=""
-REPO="${REPO:-j-hc/revanced-magisk-module}"
+REPO="${REPO:-samakshkambxj/morphe-builder}"
 
 while [ $# -gt 0 ]; do
     case "$1" in

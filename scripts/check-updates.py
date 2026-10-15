@@ -20,7 +20,9 @@ import tomllib
 import urllib.request
 
 API = "https://api.github.com"
-UPSTREAM_BUILDER = "j-hc/revanced-magisk-module"
+# Base-version drift feed. Empty by default (opt in via UPSTREAM_BUILDER=...);
+# without it only patch-rev drift is reported.
+UPSTREAM_BUILDER = os.environ.get("UPSTREAM_BUILDER", "")
 # Our own releases: the build gate compares config pins against the last
 # published manifest (hermetic stable), not against live drift.
 SELF_REPO = os.environ.get("UPDATES_SELF_REPO", "samakshkambxj/morphe-builder")
@@ -111,39 +113,41 @@ def main():
         if latest and latest != pin:
             updates.append(f"{variant} patches {pin} -> {latest}")
 
-    # 2. Stock base versions, newest-first per app.
-    try:
-        releases = api(f"/repos/{UPSTREAM_BUILDER}/releases?per_page=10")
-    except Exception as e:  # noqa: BLE001
-        releases = []
-        updates.append(f"base check failed ({e})")
+    # 2. Stock base versions, newest-first per app. Skipped entirely unless
+    # UPSTREAM_BUILDER is set — no default feed.
     found: dict[str, str] = {}
-    for rel in releases:
-        tag = rel.get("tag_name", "")
-        if not tag:
-            continue
+    if UPSTREAM_BUILDER:
         try:
-            full = api(f"/repos/{UPSTREAM_BUILDER}/releases/tags/{tag}")
-        except Exception:  # noqa: BLE001 - try the next tag
-            continue
-        for a in full.get("assets", []):
-            name = a.get("browser_download_url", "").rsplit("/", 1)[-1]
-            if not name.endswith(".zip"):
+            releases = api(f"/repos/{UPSTREAM_BUILDER}/releases?per_page=10")
+        except Exception as e:  # noqa: BLE001
+            releases = []
+            updates.append(f"base check failed ({e})")
+        for rel in releases:
+            tag = rel.get("tag_name", "")
+            if not tag:
                 continue
-            for app, match in MODULE_MATCH.items():
-                if app in found or match not in name:
+            try:
+                full = api(f"/repos/{UPSTREAM_BUILDER}/releases/tags/{tag}")
+            except Exception:  # noqa: BLE001 - try the next tag
+                continue
+            for a in full.get("assets", []):
+                name = a.get("browser_download_url", "").rsplit("/", 1)[-1]
+                if not name.endswith(".zip"):
                     continue
-                # Prefer arm64 music builds.
-                if app == "music" and "arm64" not in name and any(
-                    "arm64" in x for x in [y.get("browser_download_url", "") for y in full.get("assets", [])]
-                    if match in x
-                ):
-                    continue
-                v = asset_version(name)
-                if v:
-                    found[app] = v
-        if all(a in found for a in (cfg.get("apps") or {})):
-            break
+                for app, match in MODULE_MATCH.items():
+                    if app in found or match not in name:
+                        continue
+                    # Prefer arm64 music builds.
+                    if app == "music" and "arm64" not in name and any(
+                        "arm64" in x for x in [y.get("browser_download_url", "") for y in full.get("assets", [])]
+                        if match in x
+                    ):
+                        continue
+                    v = asset_version(name)
+                    if v:
+                        found[app] = v
+            if all(a in found for a in (cfg.get("apps") or {})):
+                break
     for app, want in (cfg.get("apps") or {}).items():
         pin = (want.get("base") or "").strip()
         live = found.get(app, "")

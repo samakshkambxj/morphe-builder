@@ -144,7 +144,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--upstream", default="j-hc/revanced-magisk-module")
+    ap.add_argument("--upstream", default="samakshkambxj/morphe-builder")
     ap.add_argument("--match", default="")
     ap.add_argument("--min-libs", type=int, default=5)
     args = ap.parse_args()
