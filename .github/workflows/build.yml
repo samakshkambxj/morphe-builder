@@ -182,9 +182,10 @@ jobs:
           TAG="$(date -u +%Y%m%d)"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           # Provenance recorded per app at build time (pins and floats alike).
-          source build-info-youtube.env; YT_BASE=$APP_BASE; PATCH_REV=$PATCHES_REV
-          source build-info-music.env; MU_BASE=$APP_BASE
-          source build-info-reddit.env; RD_BASE=$APP_BASE
+          # Artifacts download flat into modules/, so read them there.
+          source modules/build-info-youtube.env; YT_BASE=$APP_BASE; PATCH_REV=$PATCHES_REV
+          source modules/build-info-music.env; MU_BASE=$APP_BASE
+          source modules/build-info-reddit.env; RD_BASE=$APP_BASE
           echo "bases: YT=$YT_BASE music=$MU_BASE reddit=$RD_BASE rev=$PATCH_REV"
           bash scripts/make-vendor-drop.sh --out vendor-drop --tag "$TAG" \
             --patch-rev "$PATCH_REV" \
