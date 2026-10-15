@@ -9,7 +9,7 @@
 # Usage:
 #   ./make-vendor-drop.sh --out <dir> --tag <release-tag>
 #       --app <name=YouTube> --module <zip> [--app <name> --module <zip> ...]
-#       [--patch-rev <rev>] [--split] [--split-size 20m]
+#       [--base-version <v> ...] [--patch-rev <rev>] [--split] [--split-size 20m]
 # Example:
 #   ./make-vendor-drop.sh --out vendor-drop --tag 20221113 \
 #       --app YouTube --module youtube-morphe-module-v21.20.405-all.zip \
@@ -20,6 +20,8 @@
 #   { "tag": ..., "patch_rev": ...,
 #     "apps": { "<name>": { "base_version": ..., "module": <file>,
 #                            "apk": <file>, "sha256": ... } } }
+# Base versions come from --base-version (build provenance), falling back to
+# the module file name when absent (manual runs).
 
 set -euo pipefail
 
@@ -30,6 +32,7 @@ SPLIT=0
 SPLIT_SIZE="20m"
 APPS=()
 MODULES=()
+BASES=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -38,6 +41,7 @@ while [ $# -gt 0 ]; do
         --patch-rev) PATCH_REV="${2:-}"; shift 2 ;;
         --app) APPS+=("${2:-}"); shift 2 ;;
         --module) MODULES+=("${2:-}"); shift 2 ;;
+        --base-version) BASES+=("${2:-}"); shift 2 ;;
         --split) SPLIT=1; shift ;;
         --split-size) SPLIT_SIZE="${2:-20m}"; shift 2 ;;
         --help|-h) sed -n '2,/^$/p' "$0"; exit 0 ;;
@@ -91,14 +95,17 @@ MANIFEST_ENTRIES=""
 i=0
 for app in "${APPS[@]}"; do
     mod="${MODULES[$i]}"
+    base="${BASES[$i]:-}"
     i=$((i + 1))
     echo "[drop] $app <= $mod"
     apk="$OUT/${app}Patched.apk"
     lib="$OUT/${app}/lib/arm64"
     stage_one "$mod" "$apk" "$lib"
-    # Base version from the module file name (youtube-morphe-module-v21.20.405-all.zip -> 21.20.405).
-    base="$(basename "$mod" | grep -m1 -o 'v[0-9][0-9.]*' | head -n1 || true)"
-    base="${base#v}"
+    # Base version: explicit provenance first, module file name fallback.
+    if [ -z "$base" ]; then
+        base="$(basename "$mod" | grep -m1 -o 'v[0-9][0-9.]*' | head -n1 || true)"
+        base="${base#v}"
+    fi
     sha="$(sha256sum "$apk" | cut -d' ' -f1)"
     MANIFEST_ENTRIES="$MANIFEST_ENTRIES$(python3 -c "
 import json,sys

@@ -153,10 +153,18 @@ jobs:
           bash scripts/qa-gate.sh --module "modules/${{ matrix.app }}-module.zip" \
             --markers "$APP_MARKERS" --min-stock-libs 10
 
+      - name: Record build provenance
+        run: |
+          printf 'APP_BASE=%s\nPATCHES_REV=%s\n' "$APP_BASE" "$PATCHES_REV" \
+            > "build-info-${{ matrix.app }}.env"
+          cat "build-info-${{ matrix.app }}.env"
+
       - uses: actions/upload-artifact@v4
         with:
           name: module-${{ matrix.app }}
-          path: modules/${{ matrix.app }}-module.zip
+          path: |
+            modules/${{ matrix.app }}-module.zip
+            build-info-${{ matrix.app }}.env
 
   release:
     needs: [patch]
@@ -173,10 +181,16 @@ jobs:
         run: |
           TAG="$(date -u +%Y%m%d)"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
+          # Provenance recorded per app at build time (pins and floats alike).
+          source build-info-youtube.env; YT_BASE=$APP_BASE; PATCH_REV=$PATCHES_REV
+          source build-info-music.env; MU_BASE=$APP_BASE
+          source build-info-reddit.env; RD_BASE=$APP_BASE
+          echo "bases: YT=$YT_BASE music=$MU_BASE reddit=$RD_BASE rev=$PATCH_REV"
           bash scripts/make-vendor-drop.sh --out vendor-drop --tag "$TAG" \
-            --app YouTube --module "modules/youtube-module.zip" \
-            --app Music   --module "modules/music-module.zip" \
-            --app Reddit  --module "modules/reddit-module.zip" \
+            --patch-rev "$PATCH_REV" \
+            --app YouTube --module "modules/youtube-module.zip" --base-version "$YT_BASE" \
+            --app Music   --module "modules/music-module.zip"   --base-version "$MU_BASE" \
+            --app Reddit  --module "modules/reddit-module.zip"  --base-version "$RD_BASE" \
             --split
 
       - name: Publish release
