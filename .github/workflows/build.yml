@@ -158,13 +158,16 @@ jobs:
           printf 'APP_BASE=%s\nPATCHES_REV=%s\n' "$APP_BASE" "$PATCHES_REV" \
             > "build-info-${{ matrix.app }}.env"
           cat "build-info-${{ matrix.app }}.env"
+          mkdir -p drop
+          cp "modules/${{ matrix.app }}-module.zip" "build-info-${{ matrix.app }}.env" drop/
 
       - uses: actions/upload-artifact@v4
         with:
+          # Single staged dir -> flat artifact root. (Multi-path uploads
+          # preserve directory structure, which previously nested the zips
+          # under modules/modules/ on download.)
           name: module-${{ matrix.app }}
-          path: |
-            modules/${{ matrix.app }}-module.zip
-            build-info-${{ matrix.app }}.env
+          path: drop/
 
   release:
     needs: [patch]
