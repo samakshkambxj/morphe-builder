@@ -6,9 +6,13 @@ YouTube, YouTube Music and Reddit — plus, unlike generic builders, release
 artifacts shaped for direct ROM consumption:
 
 - `*-module-*.zip` — root modules (stock package names, mount over stock)
-- `vendor-drop/` — `YTPatched.apk` / `YTMusicPatched.apk` / `RedditPatched.apk`,
-  matching `lib/arm64` sets, `versions.json` manifest, `SHA256SUMS`,
+- `vendor-drop/` — `youtube-morphe-patched-v21.20.405-arm64-v8a.apk`
+  style APKs (the `-patched-` infix marks root builds apart from non-root
+  assets), matching `lib/arm64` sets, `versions.json` manifest, `SHA256SUMS`,
   optional `.part` chunks in vendor-tree split format
+- `*-morphe-module-v<base>-arm64-v8a.zip` — root modules (stock package
+  names, mount over stock). Single-arch arm64 builds, so the arch tag is
+  truthful, not decorative.
 - `versions.json` — single source of truth per release: app → base version,
   patch rev, artifact URLs, checksums. Consumed by `vendor/morphe`
   `update.sh` and the MorpheManager update center instead of scraping the

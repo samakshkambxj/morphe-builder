@@ -133,6 +133,22 @@ jobs:
           python3 scripts/extract-stock.py --module "upstream/${{ matrix.app }}-module.zip" --out "stock-${{ matrix.app }}.apk"
           echo "APP_BASE=$(grep ^BASE_VERSION= fetch.log | cut -d= -f2)" >> "$GITHUB_ENV"
 
+      - name: Name artifacts
+        run: |
+          case "${{ matrix.app }}" in
+            youtube) PREFIX=youtube-morphe ;;
+            music) PREFIX=music-morphe ;;
+            reddit) PREFIX=reddit-morphe ;;
+          esac
+          # Single-arch arm64 builds: arch tag is truthful, not decorative.
+          ARCH=arm64-v8a
+          {
+            echo "MOD_FILE=modules/${PREFIX}-module-v${APP_BASE}-${ARCH}.zip"
+            echo "APK_FILE=${PREFIX}-patched-v${APP_BASE}-${ARCH}.apk"
+          } >> "$GITHUB_ENV"
+          echo "module: modules/${PREFIX}-module-v${APP_BASE}-${ARCH}.zip"
+          echo "apk: ${PREFIX}-patched-v${APP_BASE}-${ARCH}.apk"
+
       # From-source patching: stock base + pinned CLI/patches, root recipe.
       - name: Patch + sign
         run: |
@@ -146,11 +162,11 @@ jobs:
           bash scripts/make-module.sh --app "${{ matrix.app }}" \
             --package "$APP_PACKAGE" --version "$APP_BASE" \
             --patched "patched-${{ matrix.app }}.apk" --stock "stock-${{ matrix.app }}.apk" \
-            --out "modules/${{ matrix.app }}-module.zip"
+            --out "$MOD_FILE"
 
       - name: QA gate
         run: |
-          bash scripts/qa-gate.sh --module "modules/${{ matrix.app }}-module.zip" \
+          bash scripts/qa-gate.sh --module "$MOD_FILE" \
             --markers "$APP_MARKERS" --min-stock-libs 10
 
       - name: Record build provenance
@@ -159,7 +175,7 @@ jobs:
             > "build-info-${{ matrix.app }}.env"
           cat "build-info-${{ matrix.app }}.env"
           mkdir -p drop
-          cp "modules/${{ matrix.app }}-module.zip" "build-info-${{ matrix.app }}.env" drop/
+          cp "$MOD_FILE" "build-info-${{ matrix.app }}.env" drop/
 
       - uses: actions/upload-artifact@v4
         with:
@@ -190,11 +206,15 @@ jobs:
           source modules/build-info-music.env; MU_BASE=$APP_BASE
           source modules/build-info-reddit.env; RD_BASE=$APP_BASE
           echo "bases: YT=$YT_BASE music=$MU_BASE reddit=$RD_BASE rev=$PATCH_REV"
+          ARCH=arm64-v8a
           bash scripts/make-vendor-drop.sh --out vendor-drop --tag "$TAG" \
             --patch-rev "$PATCH_REV" \
-            --app YouTube --module "modules/youtube-module.zip" --base-version "$YT_BASE" \
-            --app Music   --module "modules/music-module.zip"   --base-version "$MU_BASE" \
-            --app Reddit  --module "modules/reddit-module.zip"  --base-version "$RD_BASE" \
+            --app YouTube --module "modules/youtube-morphe-module-v${YT_BASE}-${ARCH}.zip" \
+              --apk-name "youtube-morphe-patched-v${YT_BASE}-${ARCH}.apk" --base-version "$YT_BASE" \
+            --app Music --module "modules/music-morphe-module-v${MU_BASE}-${ARCH}.zip" \
+              --apk-name "music-morphe-patched-v${MU_BASE}-${ARCH}.apk" --base-version "$MU_BASE" \
+            --app Reddit --module "modules/reddit-morphe-module-v${RD_BASE}-${ARCH}.zip" \
+              --apk-name "reddit-morphe-patched-v${RD_BASE}-${ARCH}.apk" --base-version "$RD_BASE" \
             --split
 
       - name: Publish release
@@ -205,5 +225,5 @@ jobs:
           # re-extracted from the modules downstream anyway.
           gh release create "$TAG" --title "$TAG (${{ inputs.channel || 'stable' }})" \
             --notes "Patch revs see config.toml pins. versions.json is authoritative." \
-            modules/*-module.zip vendor-drop/*.apk vendor-drop/*.apk.part* \
+            modules/*-morphe-module-*.zip vendor-drop/*-patched-*.apk vendor-drop/*.apk.part* \
             vendor-drop/versions.json vendor-drop/SHA256SUMS

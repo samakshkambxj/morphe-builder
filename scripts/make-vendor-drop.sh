@@ -9,7 +9,11 @@
 # Usage:
 #   ./make-vendor-drop.sh --out <dir> --tag <release-tag>
 #       --app <name=YouTube> --module <zip> [--app <name> --module <zip> ...]
-#       [--base-version <v> ...] [--patch-rev <rev>] [--split] [--split-size 20m]
+#       [--apk-name <file> ...] [--base-version <v> ...]
+#       [--patch-rev <rev>] [--split] [--split-size 20m]
+# Staged APK names default to <App>Patched.apk; pass --apk-name for
+# release-style names (e.g. youtube-morphe-patched-v21.20.405-arm64-v8a.apk).
+# The -patched- infix distinguishes these root builds from non-root assets.
 # Example:
 #   ./make-vendor-drop.sh --out vendor-drop --tag 20221113 \
 #       --app YouTube --module youtube-morphe-module-v21.20.405-all.zip \
@@ -33,6 +37,7 @@ SPLIT_SIZE="20m"
 APPS=()
 MODULES=()
 BASES=()
+APKNAMES=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -42,6 +47,7 @@ while [ $# -gt 0 ]; do
         --app) APPS+=("${2:-}"); shift 2 ;;
         --module) MODULES+=("${2:-}"); shift 2 ;;
         --base-version) BASES+=("${2:-}"); shift 2 ;;
+        --apk-name) APKNAMES+=("${2:-}"); shift 2 ;;
         --split) SPLIT=1; shift ;;
         --split-size) SPLIT_SIZE="${2:-20m}"; shift 2 ;;
         --help|-h) sed -n '2,/^$/p' "$0"; exit 0 ;;
@@ -91,14 +97,17 @@ EOF
 }
 
 MANIFEST_ENTRIES=""
+STAGED_APKS=""
 
 i=0
 for app in "${APPS[@]}"; do
     mod="${MODULES[$i]}"
     base="${BASES[$i]:-}"
+    apkname="${APKNAMES[$i]:-}"
     i=$((i + 1))
     echo "[drop] $app <= $mod"
-    apk="$OUT/${app}Patched.apk"
+    [ -n "$apkname" ] || apkname="${app}Patched.apk"
+    apk="$OUT/$apkname"
     lib="$OUT/${app}/lib/arm64"
     stage_one "$mod" "$apk" "$lib"
     # Base version: explicit provenance first, module file name fallback.
@@ -107,6 +116,7 @@ for app in "${APPS[@]}"; do
         base="${base#v}"
     fi
     sha="$(sha256sum "$apk" | cut -d' ' -f1)"
+    STAGED_APKS="$STAGED_APKS $(basename "$apk")"
     MANIFEST_ENTRIES="$MANIFEST_ENTRIES$(python3 -c "
 import json,sys
 print(json.dumps({sys.argv[1]: {'base_version': sys.argv[2], 'module': sys.argv[3], 'apk': sys.argv[4], 'sha256': sys.argv[5]}}))
@@ -126,9 +136,10 @@ with open(f"{out}/versions.json", "w") as f:
 print("wrote", f"{out}/versions.json")
 EOF
 
-# Checksums cover the shippable files (apks + manifest, not the lib dirs;
-# lib contents are verified at ROM build time by count).
-(cd "$OUT" && sha256sum ./*Patched.apk versions.json > SHA256SUMS)
+# Checksums cover the staged APKs + manifest (lib dirs re-verify at ROM
+# build time; explicit file list, never globs — names vary by caller).
+# shellcheck disable=SC2086
+(cd "$OUT" && sha256sum $STAGED_APKS versions.json > SHA256SUMS)
 echo "[drop] wrote $OUT/SHA256SUMS"
 
 if [ "$SPLIT" -eq 1 ]; then
